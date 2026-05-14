@@ -5,10 +5,13 @@ import config
 
 
 def is_admin(interaction: discord.Interaction) -> bool:
-    admin_role_id = config.get("admin_role_id")
-    if not admin_role_id:
-        return interaction.user.guild_permissions.administrator
-    return any(r.id == int(admin_role_id) for r in interaction.user.roles)
+    allowed = ["The Administrator", "Class-X Overwatch"]
+    return any(r.name in allowed for r in interaction.user.roles)
+
+
+def is_staff(interaction: discord.Interaction) -> bool:
+    allowed = ["The Administrator", "Class-X Overwatch", "Class O", "Class A"]
+    return any(r.name in allowed for r in interaction.user.roles)
 
 
 class Admin(commands.Cog):
@@ -34,8 +37,8 @@ class Admin(commands.Cog):
         admin_role: discord.Role = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.followup.send("❌ Server administrator only.", ephemeral=True)
+        if not is_admin(interaction):
+            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
             return
 
         if applications_channel:
@@ -50,18 +53,18 @@ class Admin(commands.Cog):
             config.set_value("admin_role_id", admin_role.id)
 
         cfg = config.load()
-        app_ch  = f"<#{cfg['application_channel_id']}>"  if cfg.get("application_channel_id")  else "⚠️ Not set"
-        sug_ch  = f"<#{cfg['suggestions_channel_id']}>"  if cfg.get("suggestions_channel_id")  else "⚠️ Not set"
-        evt_ch  = f"<#{cfg['events_channel_id']}>"       if cfg.get("events_channel_id")       else "⚠️ Not set"
-        s_role  = f"<@&{cfg['staff_role_id']}>"          if cfg.get("staff_role_id")           else "⚠️ Not set"
-        a_role  = f"<@&{cfg['admin_role_id']}>"          if cfg.get("admin_role_id")           else "⚠️ Not set"
+        app_ch = f"<#{cfg['application_channel_id']}>" if cfg.get("application_channel_id") else "⚠️ Not set"
+        sug_ch = f"<#{cfg['suggestions_channel_id']}>" if cfg.get("suggestions_channel_id") else "⚠️ Not set"
+        evt_ch = f"<#{cfg['events_channel_id']}>"      if cfg.get("events_channel_id")      else "⚠️ Not set"
+        s_role = f"<@&{cfg['staff_role_id']}>"         if cfg.get("staff_role_id")          else "⚠️ Not set"
+        a_role = f"<@&{cfg['admin_role_id']}>"         if cfg.get("admin_role_id")          else "⚠️ Not set"
 
         embed = discord.Embed(title="⚙️ GlacierBot — Configuration", color=0x5865F2)
-        embed.add_field(name="Applications Channel", value=app_ch,  inline=False)
-        embed.add_field(name="Suggestions Channel",  value=sug_ch,  inline=False)
-        embed.add_field(name="Events Channel",       value=evt_ch,  inline=False)
-        embed.add_field(name="Staff Role",           value=s_role,  inline=True)
-        embed.add_field(name="Admin Role",           value=a_role,  inline=True)
+        embed.add_field(name="Applications Channel", value=app_ch, inline=False)
+        embed.add_field(name="Suggestions Channel",  value=sug_ch, inline=False)
+        embed.add_field(name="Events Channel",       value=evt_ch, inline=False)
+        embed.add_field(name="Staff Role",           value=s_role, inline=True)
+        embed.add_field(name="Admin Role",           value=a_role, inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.guild_only()
@@ -70,7 +73,7 @@ class Admin(commands.Cog):
     async def set_webhook_secret(self, interaction: discord.Interaction, secret: str):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ No permission.", ephemeral=True)
+            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
             return
         config.set_value("application_webhook_secret", secret)
         await interaction.followup.send("✅ Webhook secret saved!", ephemeral=True)
@@ -81,7 +84,7 @@ class Admin(commands.Cog):
     async def set_announcement_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ No permission.", ephemeral=True)
+            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
             return
         config.set_value("announcement_channel_id", channel.id)
         await interaction.followup.send(f"✅ Announcement channel set to {channel.mention}!", ephemeral=True)
@@ -92,7 +95,7 @@ class Admin(commands.Cog):
     async def set_relay_secret(self, interaction: discord.Interaction, secret: str):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ No permission.", ephemeral=True)
+            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
             return
         config.set_value("relay_secret", secret)
         await interaction.followup.send("✅ Relay secret saved!", ephemeral=True)
@@ -102,23 +105,35 @@ class Admin(commands.Cog):
     async def status(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ No permission.", ephemeral=True)
+            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
             return
 
         cfg = config.load()
-        app_ch  = f"<#{cfg['application_channel_id']}>"  if cfg.get("application_channel_id")  else "⚠️ Not set"
-        sug_ch  = f"<#{cfg['suggestions_channel_id']}>"  if cfg.get("suggestions_channel_id")  else "⚠️ Not set"
-        evt_ch  = f"<#{cfg['events_channel_id']}>"       if cfg.get("events_channel_id")       else "⚠️ Not set"
-        s_role  = f"<@&{cfg['staff_role_id']}>"          if cfg.get("staff_role_id")           else "⚠️ Not set"
-        secret  = "✅ Set" if cfg.get("application_webhook_secret") else "⚠️ Not set"
+        app_ch = f"<#{cfg['application_channel_id']}>" if cfg.get("application_channel_id") else "⚠️ Not set"
+        sug_ch = f"<#{cfg['suggestions_channel_id']}>" if cfg.get("suggestions_channel_id") else "⚠️ Not set"
+        evt_ch = f"<#{cfg['events_channel_id']}>"      if cfg.get("events_channel_id")      else "⚠️ Not set"
+        s_role = f"<@&{cfg['staff_role_id']}>"         if cfg.get("staff_role_id")          else "⚠️ Not set"
+        secret = "✅ Set" if cfg.get("application_webhook_secret") else "⚠️ Not set"
 
         embed = discord.Embed(title="🖥️ GlacierBot — Status", color=0x5865F2)
-        embed.add_field(name="Applications Channel", value=app_ch,  inline=False)
-        embed.add_field(name="Suggestions Channel",  value=sug_ch,  inline=False)
-        embed.add_field(name="Events Channel",       value=evt_ch,  inline=False)
-        embed.add_field(name="Staff Role",           value=s_role,  inline=True)
-        embed.add_field(name="Webhook Secret",       value=secret,  inline=True)
+        embed.add_field(name="Applications Channel", value=app_ch, inline=False)
+        embed.add_field(name="Suggestions Channel",  value=sug_ch, inline=False)
+        embed.add_field(name="Events Channel",       value=evt_ch, inline=False)
+        embed.add_field(name="Staff Role",           value=s_role, inline=True)
+        embed.add_field(name="Webhook Secret",       value=secret, inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+    @app_commands.guild_only()
+    @app_commands.command(name="restart", description="Restart GlacierBot.")
+    async def restart(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not is_admin(interaction):
+            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            return
+        await interaction.followup.send("♻️ Restarting GlacierBot...", ephemeral=True)
+        import os, sys
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 async def setup(bot: commands.Bot):
