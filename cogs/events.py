@@ -6,17 +6,14 @@ import asyncio
 import config
 
 EVENT_COLORS = {
-    "Training":    0x5865F2,
-    "Raid":        0xED4245,
-    "Meeting":     0xFEE75C,
-    "Tryout":      0xFF8C00,
-    "Social":      0x57F287,
-    "Other":       0x99AAB5,
+    "Tryout":        0xFF8C00,
+    "Event":         0x5865F2,
+    "Server Start Up": 0x57F287,
 }
 
-EVENT_TYPES = ["Training", "Raid", "Meeting", "Tryout", "Social", "Other"]
+EVENT_TYPES = ["Tryout", "Event", "Server Start Up"]
 RSVP_EMOJI = "🎉"
-DM_TIMEOUT = 120  # seconds to wait for each response
+DM_TIMEOUT = 120
 
 
 def parse_links(links_str: str) -> list[tuple[str, str]]:
@@ -60,6 +57,43 @@ class EventLinkView(discord.ui.View):
             self.add_item(discord.ui.Button(label=label, url=url, style=discord.ButtonStyle.link))
 
 
+class AddLinksModal(discord.ui.Modal, title="Add Event Links"):
+    links_input = discord.ui.TextInput(
+        label="Links",
+        style=discord.TextStyle.paragraph,
+        placeholder='Format: Label|URL, Label2|URL2\nExample: Join Game|https://roblox.com/...',
+        required=False,
+        max_length=500,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+
+class LinksView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.links_str = None
+        self.done = False
+
+    @discord.ui.button(label="➕ Add Links", style=discord.ButtonStyle.primary)
+    async def add_links(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = AddLinksModal()
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+        self.links_str = modal.links_input.value or ""
+        self.done = True
+        self.stop()
+        await interaction.edit_original_response(content=f"✅ Links saved!", view=None)
+
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary)
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.links_str = ""
+        self.done = True
+        self.stop()
+        await interaction.response.edit_message(content="Skipped links.", view=None)
+
+
 class ConfirmView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=DM_TIMEOUT)
@@ -95,6 +129,30 @@ class EventTypeView(discord.ui.View):
         return callback
 
 
+class PingView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.chosen = ""
+
+    @discord.ui.button(label="No one", style=discord.ButtonStyle.secondary)
+    async def no_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = ""
+        self.stop()
+        await interaction.response.edit_message(content="Ping: **No one**", view=None)
+
+    @discord.ui.button(label="@here", style=discord.ButtonStyle.primary)
+    async def here_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = "@here"
+        self.stop()
+        await interaction.response.edit_message(content="Ping: **@here**", view=None)
+
+    @discord.ui.button(label="@everyone", style=discord.ButtonStyle.danger)
+    async def everyone_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = "@everyone"
+        self.stop()
+        await interaction.response.edit_message(content="Ping: **@everyone**", view=None)
+
+
 class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -112,7 +170,6 @@ class Events(commands.Cog):
         return any(r.id in allowed for r in interaction.user.roles)
 
     async def _ask(self, dm: discord.DMChannel, user: discord.User, prompt: str) -> str | None:
-        """Send a prompt and wait for the user's next DM response."""
         await dm.send(prompt)
         def check(m):
             return m.author.id == user.id and isinstance(m.channel, discord.DMChannel)
@@ -139,61 +196,87 @@ class Events(commands.Cog):
             await interaction.followup.send("❌ I couldn't DM you. Please enable DMs from server members.", ephemeral=True)
             return
 
-        await dm.send("## 📣 New Event Setup\nLet's build your event. You can type `cancel` at any time to stop.\n\n**Step 1 of 6 — What type of event is this?**")
+        await dm.send("# 📣 New Event Setup\nLet's build your event. You can type `cancel` at any time to stop.\n\n**Step 1 of 6 — What type of event is this?**")
 
         # Step 1: Event type via buttons
         type_view = EventTypeView()
-        type_msg = await dm.send("Choose an event type:", view=type_view)
+        await dm.send("Choose an event type:", view=type_view)
         await type_view.wait()
         if not type_view.chosen:
             await dm.send("⏱️ Timed out. Use `/event` again to restart.")
             return
         event_type = type_view.chosen
 
-        # Steps 2–6: Text prompts
-        steps = [
-            ("title",       "**Step 2 of 6 — Event title?**\nExample: `Weekly Training Session`"),
-            ("description", "**Step 3 of 6 — Description?**\nExample: `Join us for drills and combat practice.`"),
-            ("date",        "**Step 4 of 6 — Date and time?**\nExample: `May 20 at 5PM EST`"),
-            ("host",        "**Step 5 of 6 — Who is hosting?**\nExample: `@Username` or a name"),
-            ("location",    "**Step 6 of 6 — Location?**\nExample: `Game link, server name, or TBA`"),
-        ]
-
-        data = {"event_type": event_type, "author": user.display_name}
-
-        for key, prompt in steps:
-            val = await self._ask(dm, user, prompt)
-            if val is None:
-                return
-            if val.lower() == "cancel":
-                await dm.send("❌ Event creation cancelled.")
-                return
-            data[key] = val
-
-        # Optional links
-        links_prompt = await self._ask(
-            dm, user,
-            "**Optional — Any links to add as buttons?**\nFormat: `Label|URL, Label2|URL2` (up to 5)\nOr type `skip` to skip."
-        )
-        if links_prompt is None:
+        # Step 2: Title
+        val = await self._ask(dm, user, "# Step 2 of 6 — Event Title\nExample: `Iron Fist Tryout`")
+        if val is None or val.lower() == "cancel":
+            await dm.send("❌ Event creation cancelled.")
             return
-        parsed_links = [] if links_prompt.lower() in ("skip", "none", "") else parse_links(links_prompt)
+        title = val
 
-        # Build preview
+        # Step 3: Description
+        val = await self._ask(dm, user, "# Step 3 of 6 — Description\nDescribe your event.")
+        if val is None or val.lower() == "cancel":
+            await dm.send("❌ Event creation cancelled.")
+            return
+        description = val
+
+        # Step 4: Date & Time
+        val = await self._ask(dm, user, "# Step 4 of 6 — Date & Time\nExample: `May 20 at 5PM EST`")
+        if val is None or val.lower() == "cancel":
+            await dm.send("❌ Event creation cancelled.")
+            return
+        date = val
+
+        # Step 5: Host
+        val = await self._ask(dm, user, "# Step 5 of 6 — Host\nWho is hosting this event?")
+        if val is None or val.lower() == "cancel":
+            await dm.send("❌ Event creation cancelled.")
+            return
+        host = val
+
+        # Step 6: Location
+        val = await self._ask(dm, user, "# Step 6 of 6 — Location\nWhere does this take place? (e.g. game link, server name, or TBA)")
+        if val is None or val.lower() == "cancel":
+            await dm.send("❌ Event creation cancelled.")
+            return
+        location = val
+
+        # Links step via button
+        links_view = LinksView()
+        await dm.send("# Optional — Links\nWant to add any link buttons to the event?", view=links_view)
+        await links_view.wait()
+        parsed_links = parse_links(links_view.links_str) if links_view.links_str else []
+
+        # Ping selection
+        ping_view = PingView()
+        await dm.send("# Who should be pinged when this posts?", view=ping_view)
+        await ping_view.wait()
+        ping_content = ping_view.chosen or ""
+
+        data = {
+            "event_type": event_type,
+            "title": title,
+            "description": description,
+            "date": date,
+            "host": host,
+            "location": location,
+            "author": user.display_name,
+        }
+
+        # Preview
         embed = build_embed(data)
-        view = ConfirmView()
-        parsed_link_view = EventLinkView(parsed_links) if parsed_links else None
-
-        await dm.send("## 👀 Preview\nHere's how your event will look. Ready to post?")
-        if parsed_link_view:
-            await dm.send(embed=embed, view=parsed_link_view)
+        await dm.send("# 👀 Preview\nHere's how your event will look:")
+        if parsed_links:
+            await dm.send(embed=embed, view=EventLinkView(parsed_links))
         else:
             await dm.send(embed=embed)
 
-        confirm_msg = await dm.send("Post this event?", view=view)
-        await view.wait()
+        confirm_view = ConfirmView()
+        await dm.send("Ready to post?", view=confirm_view)
+        await confirm_view.wait()
 
-        if not view.confirmed:
+        if not confirm_view.confirmed:
             return
 
         # Post to events channel
@@ -204,7 +287,7 @@ class Events(commands.Cog):
             return
 
         final_view = EventLinkView(parsed_links) if parsed_links else None
-        msg = await channel.send("@everyone", embed=embed, view=final_view)
+        msg = await channel.send(ping_content, embed=embed, view=final_view)
         await msg.add_reaction(RSVP_EMOJI)
         await dm.send(f"✅ Event posted in {channel.mention}!")
 
