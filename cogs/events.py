@@ -6,8 +6,8 @@ import asyncio
 import config
 
 EVENT_COLORS = {
-    "Tryout":        0xFF8C00,
-    "Event":         0x5865F2,
+    "Tryout":          0xFF8C00,
+    "Event":           0x5865F2,
     "Server Start Up": 0x57F287,
 }
 
@@ -74,7 +74,6 @@ class LinksView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=DM_TIMEOUT)
         self.links_str = None
-        self.done = False
 
     @discord.ui.button(label="➕ Add Links", style=discord.ButtonStyle.primary)
     async def add_links(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -82,16 +81,38 @@ class LinksView(discord.ui.View):
         await interaction.response.send_modal(modal)
         await modal.wait()
         self.links_str = modal.links_input.value or ""
-        self.done = True
         self.stop()
-        await interaction.edit_original_response(content=f"✅ Links saved!", view=None)
+        await interaction.edit_original_response(content="✅ Links saved!", view=None)
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.links_str = ""
-        self.done = True
         self.stop()
         await interaction.response.edit_message(content="Skipped links.", view=None)
+
+
+class PingView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.chosen = ""
+
+    @discord.ui.button(label="No one", style=discord.ButtonStyle.secondary)
+    async def no_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = ""
+        self.stop()
+        await interaction.response.edit_message(content="Ping: **No one**", view=None)
+
+    @discord.ui.button(label="@here", style=discord.ButtonStyle.primary)
+    async def here_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = "@here"
+        self.stop()
+        await interaction.response.edit_message(content="Ping: **@here**", view=None)
+
+    @discord.ui.button(label="@everyone", style=discord.ButtonStyle.danger)
+    async def everyone_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = "@everyone"
+        self.stop()
+        await interaction.response.edit_message(content="Ping: **@everyone**", view=None)
 
 
 class ConfirmView(discord.ui.View):
@@ -127,30 +148,6 @@ class EventTypeView(discord.ui.View):
             self.stop()
             await interaction.response.edit_message(content=f"Event type: **{event_type}**", view=None)
         return callback
-
-
-class PingView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=DM_TIMEOUT)
-        self.chosen = ""
-
-    @discord.ui.button(label="No one", style=discord.ButtonStyle.secondary)
-    async def no_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.chosen = ""
-        self.stop()
-        await interaction.response.edit_message(content="Ping: **No one**", view=None)
-
-    @discord.ui.button(label="@here", style=discord.ButtonStyle.primary)
-    async def here_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.chosen = "@here"
-        self.stop()
-        await interaction.response.edit_message(content="Ping: **@here**", view=None)
-
-    @discord.ui.button(label="@everyone", style=discord.ButtonStyle.danger)
-    async def everyone_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.chosen = "@everyone"
-        self.stop()
-        await interaction.response.edit_message(content="Ping: **@everyone**", view=None)
 
 
 class Events(commands.Cog):
@@ -196,9 +193,10 @@ class Events(commands.Cog):
             await interaction.followup.send("❌ I couldn't DM you. Please enable DMs from server members.", ephemeral=True)
             return
 
-        await dm.send("# 📣 New Event Setup\nLet's build your event. You can type `cancel` at any time to stop.\n\n**Step 1 of 6 — What type of event is this?**")
+        await dm.send("# 📣 New Event Setup\nLet's build your event. You can type `cancel` at any time to stop.")
 
-        # Step 1: Event type via buttons
+        # Step 1: Event type
+        await dm.send("# Step 1 of 6 — Event Type\nWhat type of event is this?")
         type_view = EventTypeView()
         await dm.send("Choose an event type:", view=type_view)
         await type_view.wait()
@@ -242,13 +240,13 @@ class Events(commands.Cog):
             return
         location = val
 
-        # Links step via button
+        # Links
         links_view = LinksView()
         await dm.send("# Optional — Links\nWant to add any link buttons to the event?", view=links_view)
         await links_view.wait()
         parsed_links = parse_links(links_view.links_str) if links_view.links_str else []
 
-        # Ping selection
+        # Ping
         ping_view = PingView()
         await dm.send("# Who should be pinged when this posts?", view=ping_view)
         await ping_view.wait()
