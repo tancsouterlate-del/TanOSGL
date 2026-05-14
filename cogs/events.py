@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime
+import asyncio
 import config
 
 EVENT_COLORS = {
@@ -13,11 +14,12 @@ EVENT_COLORS = {
     "Other":       0x99AAB5,
 }
 
+EVENT_TYPES = ["Training", "Raid", "Meeting", "Tryout", "Social", "Other"]
 RSVP_EMOJI = "🎉"
+DM_TIMEOUT = 120  # seconds to wait for each response
 
 
 def parse_links(links_str: str) -> list[tuple[str, str]]:
-    """Parse 'Label|URL, Label2|URL2' into list of (label, url) tuples."""
     results = []
     if not links_str:
         return results
@@ -28,19 +30,69 @@ def parse_links(links_str: str) -> list[tuple[str, str]]:
             results.append((label.strip(), url.strip()))
         elif item.startswith("http"):
             results.append(("Link", item))
-    return results[:5]  # Max 5 links
+    return results[:5]
+
+
+def build_embed(data: dict) -> discord.Embed:
+    color = EVENT_COLORS.get(data["event_type"], 0x99AAB5)
+    embed = discord.Embed(
+        title=f"📣 {data['event_type']} — {data['title']}",
+        description=data["description"],
+        color=color,
+        timestamp=datetime.utcnow()
+    )
+    embed.add_field(name="📅 Date & Time", value=data["date"],     inline=True)
+    embed.add_field(name="👤 Host",         value=data["host"],     inline=True)
+    embed.add_field(name="📍 Location",     value=data["location"], inline=True)
+    embed.add_field(
+        name=f"{RSVP_EMOJI} RSVP",
+        value=f"React with {RSVP_EMOJI} to attend!\n**0 attending**",
+        inline=False
+    )
+    embed.set_footer(text=f"Posted by {data['author']} • GlacierBot")
+    return embed
 
 
 class EventLinkView(discord.ui.View):
-    """Persistent view with up to 5 link buttons."""
     def __init__(self, links: list[tuple[str, str]]):
         super().__init__(timeout=None)
         for label, url in links:
-            self.add_item(discord.ui.Button(
-                label=label,
-                url=url,
-                style=discord.ButtonStyle.link
-            ))
+            self.add_item(discord.ui.Button(label=label, url=url, style=discord.ButtonStyle.link))
+
+
+class ConfirmView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.confirmed = None
+
+    @discord.ui.button(label="✅ Post Event", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        self.stop()
+        await interaction.response.edit_message(content="✅ Posting event...", view=None)
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        self.stop()
+        await interaction.response.edit_message(content="❌ Event cancelled.", view=None)
+
+
+class EventTypeView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.chosen = None
+        for et in EVENT_TYPES:
+            btn = discord.ui.Button(label=et, style=discord.ButtonStyle.primary)
+            btn.callback = self._make_callback(et)
+            self.add_item(btn)
+
+    def _make_callback(self, event_type: str):
+        async def callback(interaction: discord.Interaction):
+            self.chosen = event_type
+            self.stop()
+            await interaction.response.edit_message(content=f"Event type: **{event_type}**", view=None)
+        return callback
 
 
 class Events(commands.Cog):
@@ -59,71 +111,102 @@ class Events(commands.Cog):
             return interaction.user.guild_permissions.manage_guild
         return any(r.id in allowed for r in interaction.user.roles)
 
+    async def _ask(self, dm: discord.DMChannel, user: discord.User, prompt: str) -> str | None:
+        """Send a prompt and wait for the user's next DM response."""
+        await dm.send(prompt)
+        def check(m):
+            return m.author.id == user.id and isinstance(m.channel, discord.DMChannel)
+        try:
+            msg = await self.bot.wait_for("message", check=check, timeout=DM_TIMEOUT)
+            return msg.content.strip()
+        except asyncio.TimeoutError:
+            await dm.send("⏱️ Timed out. Use `/event` again to restart.")
+            return None
+
     @app_commands.guild_only()
-    @app_commands.command(name="event", description="Post a new event announcement with RSVP.")
-    @app_commands.describe(
-        event_type="Type of event",
-        title="Event title",
-        description="Event details",
-        date="Date and time (e.g. May 15 at 5PM EST)",
-        host="Who is hosting",
-        location="Where it takes place (e.g. game link or server)",
-        links='Optional buttons: format as "Label|URL, Label2|URL2" (up to 5)',
-    )
-    @app_commands.choices(event_type=[
-        app_commands.Choice(name="Training",  value="Training"),
-        app_commands.Choice(name="Raid",      value="Raid"),
-        app_commands.Choice(name="Meeting",   value="Meeting"),
-        app_commands.Choice(name="Tryout",    value="Tryout"),
-        app_commands.Choice(name="Social",    value="Social"),
-        app_commands.Choice(name="Other",     value="Other"),
-    ])
-    async def event(
-        self,
-        interaction: discord.Interaction,
-        event_type: app_commands.Choice[str],
-        title: str,
-        description: str,
-        date: str,
-        host: str,
-        location: str = "TBA",
-        links: str = None,
-    ):
+    @app_commands.command(name="event", description="Create a new event announcement via DM.")
+    async def event(self, interaction: discord.Interaction):
         if not self._is_staff(interaction):
             await interaction.response.send_message("❌ Staff role required.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.send_message("📬 Check your DMs! I'll walk you through creating the event.", ephemeral=True)
 
+        user = interaction.user
+        try:
+            dm = await user.create_dm()
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I couldn't DM you. Please enable DMs from server members.", ephemeral=True)
+            return
+
+        await dm.send("## 📣 New Event Setup\nLet's build your event. You can type `cancel` at any time to stop.\n\n**Step 1 of 6 — What type of event is this?**")
+
+        # Step 1: Event type via buttons
+        type_view = EventTypeView()
+        type_msg = await dm.send("Choose an event type:", view=type_view)
+        await type_view.wait()
+        if not type_view.chosen:
+            await dm.send("⏱️ Timed out. Use `/event` again to restart.")
+            return
+        event_type = type_view.chosen
+
+        # Steps 2–6: Text prompts
+        steps = [
+            ("title",       "**Step 2 of 6 — Event title?**\nExample: `Weekly Training Session`"),
+            ("description", "**Step 3 of 6 — Description?**\nExample: `Join us for drills and combat practice.`"),
+            ("date",        "**Step 4 of 6 — Date and time?**\nExample: `May 20 at 5PM EST`"),
+            ("host",        "**Step 5 of 6 — Who is hosting?**\nExample: `@Username` or a name"),
+            ("location",    "**Step 6 of 6 — Location?**\nExample: `Game link, server name, or TBA`"),
+        ]
+
+        data = {"event_type": event_type, "author": user.display_name}
+
+        for key, prompt in steps:
+            val = await self._ask(dm, user, prompt)
+            if val is None:
+                return
+            if val.lower() == "cancel":
+                await dm.send("❌ Event creation cancelled.")
+                return
+            data[key] = val
+
+        # Optional links
+        links_prompt = await self._ask(
+            dm, user,
+            "**Optional — Any links to add as buttons?**\nFormat: `Label|URL, Label2|URL2` (up to 5)\nOr type `skip` to skip."
+        )
+        if links_prompt is None:
+            return
+        parsed_links = [] if links_prompt.lower() in ("skip", "none", "") else parse_links(links_prompt)
+
+        # Build preview
+        embed = build_embed(data)
+        view = ConfirmView()
+        parsed_link_view = EventLinkView(parsed_links) if parsed_links else None
+
+        await dm.send("## 👀 Preview\nHere's how your event will look. Ready to post?")
+        if parsed_link_view:
+            await dm.send(embed=embed, view=parsed_link_view)
+        else:
+            await dm.send(embed=embed)
+
+        confirm_msg = await dm.send("Post this event?", view=view)
+        await view.wait()
+
+        if not view.confirmed:
+            return
+
+        # Post to events channel
         channel_id = config.get("events_channel_id")
-        channel = self.bot.get_channel(int(channel_id)) if channel_id else interaction.channel
+        channel = self.bot.get_channel(int(channel_id)) if channel_id else None
+        if not channel:
+            await dm.send("❌ Events channel not configured. Ask an admin to run `/setup`.")
+            return
 
-        color = EVENT_COLORS.get(event_type.value, 0x99AAB5)
-
-        embed = discord.Embed(
-            title=f"📣 {event_type.value} — {title}",
-            description=description,
-            color=color,
-            timestamp=datetime.utcnow()
-        )
-        embed.add_field(name="📅 Date & Time", value=date,     inline=True)
-        embed.add_field(name="👤 Host",         value=host,     inline=True)
-        embed.add_field(name="📍 Location",     value=location, inline=True)
-        embed.add_field(
-            name=f"{RSVP_EMOJI} RSVP",
-            value=f"React with {RSVP_EMOJI} to attend!\n**0 attending**",
-            inline=False
-        )
-        embed.set_footer(text=f"Posted by {interaction.user.display_name} • GlacierBot")
-
-        # Build link buttons if provided
-        parsed_links = parse_links(links) if links else []
-        view = EventLinkView(parsed_links) if parsed_links else None
-
-        msg = await channel.send("@everyone", embed=embed, view=view)
+        final_view = EventLinkView(parsed_links) if parsed_links else None
+        msg = await channel.send("@everyone", embed=embed, view=final_view)
         await msg.add_reaction(RSVP_EMOJI)
-
-        await interaction.followup.send(f"✅ Event posted in {channel.mention}!", ephemeral=True)
+        await dm.send(f"✅ Event posted in {channel.mention}!")
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -145,7 +228,6 @@ class Events(commands.Cog):
         events_channel_id = config.get("events_channel_id")
         if not events_channel_id or channel_id != int(events_channel_id):
             return
-
         channel = self.bot.get_channel(channel_id)
         if not channel:
             return
@@ -173,7 +255,6 @@ class Events(commands.Cog):
                     inline=False
                 )
                 break
-
         try:
             await message.edit(embed=new_embed)
         except discord.Forbidden:
