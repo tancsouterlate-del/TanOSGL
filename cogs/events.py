@@ -5,7 +5,7 @@ from datetime import datetime
 import asyncio
 import config
 
-RSVP_EMOJI = "🎉"
+RSVP_EMOJI = "<:nc:1268768073523925013>"
 DM_TIMEOUT = 120
 
 RANK_PRIORITY = [
