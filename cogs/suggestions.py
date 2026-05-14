@@ -9,7 +9,7 @@ FEATURED_CHANNEL_ID = 1370158487312662529
 UPVOTE_EMOJI = "<:reaction_approved:1280928878369439807>"
 DOWNVOTE_EMOJI = "<:reaction_denied:1280946099284213822>"
 NC_EMOJI = "<:nc:1268768073523925013>"
-UPVOTE_THRESHOLD = 1
+UPVOTE_THRESHOLD = 15
 
 
 def build_suggestion_embed(message: discord.Message) -> discord.Embed:
@@ -43,7 +43,7 @@ def build_suggestion_embed(message: discord.Message) -> discord.Embed:
 
 def build_result_embed(suggestion_embed: discord.Embed, feedback: str, approved: bool, dev: discord.Member) -> discord.Embed:
     color = 0x57F287 if approved else 0xED4245
-    result_text = "✅ Approved" if approved else "❌ Denied"
+    result_text = "<:reaction_approved:1280928878369439807> Approved" if approved else "<:reaction_denied:1280946099284213822> Denied"
 
     embed = discord.Embed(
         title="SUGGESTION",
