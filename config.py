@@ -9,6 +9,8 @@ DEFAULTS = {
     "events_channel_id": None,
     "staff_role_id": None,
     "admin_role_id": None,
+    "relay_secret": None,
+    "announcement_channel_id": None,
     "application_webhook_port": 5000,
 }
 
