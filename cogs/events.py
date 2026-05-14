@@ -60,7 +60,6 @@ def parse_links(links_str: str) -> list[tuple[str, str]]:
 
 
 def build_embed(dept: str, title: str, description: str, author_name: str, rank: str, parsed_links: list) -> discord.Embed:
-    timestamp = datetime.utcnow().strftime("%B %d, %Y • %I:%M %p UTC")
     icon_url = DEPT_ICONS.get(dept, "")
 
     embed = discord.Embed(
@@ -71,7 +70,7 @@ def build_embed(dept: str, title: str, description: str, author_name: str, rank:
     )
     if icon_url:
         embed.set_thumbnail(url=icon_url)
-    embed.set_footer(text=f"{author_name} • {rank} • {timestamp}")
+    embed.set_footer(text=f"{author_name} • {rank}")
     return embed
 
 
