@@ -10,9 +10,9 @@ DM_TIMEOUT = 120
 
 RANK_PRIORITY = [
     "The Administrator",
-    "Class-X Overwatch",
-    "Class O",
-    "Class A",
+    "Class - X",
+    "Class - O",
+    "Class - A",
 ]
 
 DEPT_ICONS = {
@@ -27,7 +27,7 @@ DEPT_ICONS = {
 }
 
 DEPT_CHOICES = [
-    "Class-X Overwatch",
+    "Class - X",
     "Department of Operations",
     "Security Corps",
     "The Red Wolves",
@@ -192,7 +192,7 @@ class Events(commands.Cog):
         self.bot = bot
 
     def _is_staff(self, interaction: discord.Interaction) -> bool:
-        allowed = ["The Administrator", "Class-X Overwatch", "Class O", "Class A"]
+        allowed = ["The Administrator", "Class - X", "Class - O", "Class - A"]
         return any(r.name in allowed for r in interaction.user.roles)
 
     async def _ask(self, dm: discord.DMChannel, user: discord.User, prompt: str) -> str | None:
