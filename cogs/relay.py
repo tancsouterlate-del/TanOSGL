@@ -1,12 +1,6 @@
-"""
-Relay endpoint — receives announcement data from TanOS and posts
-it directly to the public server channel as a proper bot message.
-This allows full embed rendering with author icons and footer icons.
-"""
 import discord
 from discord.ext import commands
 from aiohttp import web
-import asyncio
 import os
 import config
 
@@ -16,28 +10,10 @@ RELAY_SECRET = os.environ.get("RELAY_SECRET", "")
 class Relay(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.runner = None
-        self.site = None
-        bot.loop.create_task(self.start_relay_server())
-
-    async def start_relay_server(self):
-        await self.bot.wait_until_ready()
-        app = web.Application()
-        app.router.add_post("/announce", self.handle_announce)
-        app.router.add_get("/health", self.health_check)
-
-        self.runner = web.AppRunner(app)
-        await self.runner.setup()
-        port = int(os.environ.get("PORT", 5000))
-        self.site = web.TCPSite(self.runner, "0.0.0.0", port)
-        await self.site.start()
-        print(f"[Relay] Listening on port {port}")
-
-    async def health_check(self, request: web.Request) -> web.Response:
-        return web.Response(text="OK")
+        # Register routes on the shared web app
+        bot.web_app.router.add_post("/announce", self.handle_announce)
 
     async def handle_announce(self, request: web.Request) -> web.Response:
-        # Verify secret
         secret = config.get("relay_secret") or RELAY_SECRET
         if secret:
             auth = request.headers.get("Authorization", "")
@@ -64,7 +40,6 @@ class Relay(commands.Cog):
             embed_data = data.get("embed", {})
             ping = data.get("ping", False)
 
-            # Rebuild embed from dict
             embed = discord.Embed.from_dict(embed_data)
 
             # Ping @everyone for Rank proposals, @here for all others
@@ -80,10 +55,6 @@ class Relay(commands.Cog):
         except Exception as e:
             print(f"[Relay] Error posting announcement: {e}")
             return web.Response(status=500, text=str(e))
-
-    def cog_unload(self):
-        if self.runner:
-            asyncio.create_task(self.runner.cleanup())
 
 
 async def setup(bot: commands.Bot):
