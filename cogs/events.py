@@ -9,12 +9,33 @@ RSVP_EMOJI = "🎉"
 DM_TIMEOUT = 120
 
 RANK_PRIORITY = [
-    "Developer",
     "The Administrator",
-    "Class-X",
+    "Class-X Overwatch",
     "Class O",
     "Class A",
 ]
+
+DEPT_ICONS = {
+    "Class-X Overwatch":       "https://i.imgur.com/P91p044.png",
+    "Department of Operations": "https://i.imgur.com/SZBhEYW.png",
+    "Security Corps":           "https://i.imgur.com/YmKQvyU.png",
+    "The Red Wolves":           "https://i.imgur.com/ha1QsY8.png",
+    "Regulations Department":   "https://i.imgur.com/NOYucyC.png",
+    "Innovation Department":    "https://i.imgur.com/MHBqZYo.png",
+    "Engineering Department":   "https://i.imgur.com/lhQVavk.png",
+    "Board of Advisors":        "https://i.imgur.com/YHtkpf1.png",
+}
+
+DEPT_CHOICES = [
+    "Class-X Overwatch",
+    "Department of Operations",
+    "Security Corps",
+    "The Red Wolves",
+    "Regulations Department",
+    "Innovation Department",
+    "Engineering Department",
+]
+
 
 def get_rank(member: discord.Member) -> str:
     role_names = [r.name for r in member.roles]
@@ -24,27 +45,104 @@ def get_rank(member: discord.Member) -> str:
     return "Staff"
 
 
-def build_ansi_embed(header: str, title: str, description: str, author_name: str, rank: str) -> discord.Embed:
-    timestamp = datetime.utcnow().strftime("%B %d, %Y • %I:%M %p UTC")
+def parse_links(links_str: str) -> list[tuple[str, str]]:
+    results = []
+    if not links_str:
+        return results
+    for item in links_str.split(","):
+        item = item.strip()
+        if "|" in item:
+            label, url = item.split("|", 1)
+            results.append((label.strip(), url.strip()))
+        elif item.startswith("http"):
+            results.append(("Link", item))
+    return results[:5]
 
-    # ANSI color codes: \u001b[33m = yellow/orange, \u001b[0m = reset
-    ansi_block = (
-        f"```ansi\n"
-        f"\u001b[2;33m[{header}]\u001b[0m\n"
-        f"\n"
-        f"\u001b[2;33m[Description]\u001b[0m\n"
-        f"{description}\n"
-        f"```"
-    )
+
+def build_embed(dept: str, title: str, description: str, author_name: str, rank: str, parsed_links: list) -> discord.Embed:
+    timestamp = datetime.utcnow().strftime("%B %d, %Y • %I:%M %p UTC")
+    icon_url = DEPT_ICONS.get(dept, "")
 
     embed = discord.Embed(
         title=title,
-        description=ansi_block,
+        description=description,
         color=0x2C2F33,
         timestamp=datetime.utcnow()
     )
+    if icon_url:
+        embed.set_thumbnail(url=icon_url)
     embed.set_footer(text=f"{author_name} • {rank} • {timestamp}")
     return embed
+
+
+class EventLinkView(discord.ui.View):
+    def __init__(self, links: list[tuple[str, str]]):
+        super().__init__(timeout=None)
+        for label, url in links:
+            self.add_item(discord.ui.Button(label=label, url=url, style=discord.ButtonStyle.link))
+
+
+class AddLinksModal(discord.ui.Modal, title="Add Event Links"):
+    links_input = discord.ui.TextInput(
+        label="Links",
+        style=discord.TextStyle.paragraph,
+        placeholder="Format: Label|URL, Label2|URL2\nExample: Join Game|https://roblox.com/...",
+        required=False,
+        max_length=500,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+
+class LinksView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.links_str = None
+
+    @discord.ui.button(label="Add Links", style=discord.ButtonStyle.primary)
+    async def add_links(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = AddLinksModal()
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+        self.links_str = modal.links_input.value or ""
+        self.stop()
+        await interaction.edit_original_response(content="✅ Links saved!", view=None)
+
+    @discord.ui.button(label="No Links", style=discord.ButtonStyle.secondary)
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.links_str = ""
+        self.stop()
+        await interaction.response.edit_message(content="No links added.", view=None)
+
+
+class DeptView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.chosen = None
+        for dept in DEPT_CHOICES:
+            btn = discord.ui.Button(label=dept, style=discord.ButtonStyle.primary)
+            btn.callback = self._make_callback(dept)
+            self.add_item(btn)
+
+    def _make_callback(self, dept: str):
+        async def callback(interaction: discord.Interaction):
+            self.chosen = dept
+            self.stop()
+            await interaction.response.edit_message(content=f"Department: **{dept}**", view=None)
+        return callback
+
+
+class EventTypeView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=DM_TIMEOUT)
+        self.chosen = None
+
+    @discord.ui.button(label="General Event", style=discord.ButtonStyle.primary)
+    async def general_event(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chosen = "General Event"
+        self.stop()
+        await interaction.response.edit_message(content="Type: **General Event**", view=None)
 
 
 class ConfirmView(discord.ui.View):
@@ -52,17 +150,17 @@ class ConfirmView(discord.ui.View):
         super().__init__(timeout=DM_TIMEOUT)
         self.confirmed = None
 
-    @discord.ui.button(label="✅ Post", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅ Post Event", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.confirmed = True
         self.stop()
-        await interaction.response.edit_message(content="✅ Posting...", view=None)
+        await interaction.response.edit_message(content="✅ Posting event...", view=None)
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.confirmed = False
         self.stop()
-        await interaction.response.edit_message(content="❌ Cancelled.", view=None)
+        await interaction.response.edit_message(content="❌ Event cancelled.", view=None)
 
 
 class PingView(discord.ui.View):
@@ -109,10 +207,10 @@ class Events(commands.Cog):
             return None
 
     @app_commands.guild_only()
-    @app_commands.command(name="event", description="Create a new event post via DM.")
+    @app_commands.command(name="event", description="Create a new event announcement via DM.")
     async def event(self, interaction: discord.Interaction):
         if not self._is_staff(interaction):
-            await interaction.response.send_message("❌ Staff role required.", ephemeral=True)
+            await interaction.response.send_message("❌ Class A or above required.", ephemeral=True)
             return
 
         await interaction.response.send_message("📬 Check your DMs!", ephemeral=True)
@@ -127,38 +225,60 @@ class Events(commands.Cog):
             await interaction.followup.send("❌ I couldn't DM you. Please enable DMs from server members.", ephemeral=True)
             return
 
-        await dm.send("# 📣 New Event\nI'll ask you a few questions. Type `cancel` at any time to stop.\n")
+        await dm.send("# 📣 New Event\nLet's build your event. Type `cancel` at any time to stop.")
 
-        # Step 1: Header
-        header = await self._ask(dm, user, "# Step 1 of 3 — Header\nWhat's the header?\nExample: `The Armed Gentlemen Tryout`")
-        if header is None or header.lower() == "cancel":
-            await dm.send("❌ Cancelled.")
+        # Step 1: Event type
+        await dm.send("# Step 1 — Event Type\nWhat kind of event is this?")
+        type_view = EventTypeView()
+        await dm.send("Choose an event type:", view=type_view)
+        await type_view.wait()
+        if not type_view.chosen:
+            await dm.send("⏱️ Timed out. Use `/event` again to restart.")
             return
 
-        # Step 2: Title
-        title = await self._ask(dm, user, "# Step 2 of 3 — Title\nWhat's the title?\nExample: `The Armed Gentlemen Tryout`")
+        # Step 2: Department
+        await dm.send("# Step 2 — Department\nWhich department is hosting this event?")
+        dept_view = DeptView()
+        await dm.send("Choose a department:", view=dept_view)
+        await dept_view.wait()
+        if not dept_view.chosen:
+            await dm.send("⏱️ Timed out. Use `/event` again to restart.")
+            return
+        dept = dept_view.chosen
+
+        # Step 3: Title
+        title = await self._ask(dm, user, "# Step 3 — Title\nWhat's the title of your event?\nExample: `Iron Fist Tryout`")
         if title is None or title.lower() == "cancel":
-            await dm.send("❌ Cancelled.")
+            await dm.send("❌ Event creation cancelled.")
             return
 
-        # Step 3: Description
-        description = await self._ask(dm, user, "# Step 3 of 3 — Description\nDescribe your event. You can use multiple lines.")
+        # Step 4: Description
+        description = await self._ask(dm, user, "# Step 4 — Description\nDescribe your event.")
         if description is None or description.lower() == "cancel":
-            await dm.send("❌ Cancelled.")
+            await dm.send("❌ Event creation cancelled.")
             return
 
-        # Ping
+        # Step 5: Links
+        links_view = LinksView()
+        await dm.send("# Step 5 — Links\nWould you like to add any link buttons?", view=links_view)
+        await links_view.wait()
+        parsed_links = parse_links(links_view.links_str) if links_view.links_str else []
+
+        # Step 6: Ping
         ping_view = PingView()
-        await dm.send("# Who should be pinged?", view=ping_view)
+        await dm.send("# Step 6 — Ping\nWho should be pinged when this posts?", view=ping_view)
         await ping_view.wait()
         ping_content = ping_view.chosen or ""
 
         # Build embed
-        embed = build_ansi_embed(header, title, description, user.display_name, rank)
+        embed = build_embed(dept, title, description, user.display_name, rank, parsed_links)
 
         # Preview
-        await dm.send("# 👀 Preview\nHere's how your post will look:")
-        await dm.send(embed=embed)
+        await dm.send("# 👀 Preview\nHere's how your event will look:")
+        if parsed_links:
+            await dm.send(embed=embed, view=EventLinkView(parsed_links))
+        else:
+            await dm.send(embed=embed)
 
         confirm_view = ConfirmView()
         await dm.send("Ready to post?", view=confirm_view)
@@ -174,7 +294,8 @@ class Events(commands.Cog):
             await dm.send("❌ Events channel not configured. Ask an admin to run `/setup`.")
             return
 
-        msg = await channel.send(ping_content, embed=embed)
+        final_view = EventLinkView(parsed_links) if parsed_links else None
+        msg = await channel.send(ping_content, embed=embed, view=final_view)
         await msg.add_reaction(RSVP_EMOJI)
         await dm.send(f"✅ Posted in {channel.mention}!")
 
@@ -216,22 +337,8 @@ class Events(commands.Cog):
 
         embed = message.embeds[0]
         new_embed = embed.copy()
-
-        # Update RSVP count in footer or description
-        current_desc = new_embed.description or ""
-        # Append or update RSVP line at the end of the ansi block
-        rsvp_line = f"\n**{RSVP_EMOJI} {count} attending**"
-        if f"{RSVP_EMOJI}" in current_desc:
-            lines = current_desc.rsplit(f"{RSVP_EMOJI}", 1)
-            new_embed.description = lines[0] + f"{RSVP_EMOJI} {count} attending**"
-        else:
-            # Insert before closing ```
-            new_embed.description = current_desc.rstrip("`").rstrip() + f"\n\n{RSVP_EMOJI} **{count} attending**\n```"
-
-        try:
-            await message.edit(embed=new_embed)
-        except discord.Forbidden:
-            pass
+        footer_text = new_embed.footer.text or ""
+        await message.edit(embed=new_embed)
 
 
 async def setup(bot: commands.Bot):
