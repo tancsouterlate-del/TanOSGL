@@ -16,6 +16,7 @@ EXTENSIONS = [
     "cogs.suggestions",
     "cogs.events",
     "cogs.admin",
+    "cogs.relay",
 ]
 
 @bot.event
