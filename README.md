@@ -1,5 +1,5 @@
 # GlacierBot
-wow
+
 A Discord bot for Roblox game applications, suggestions, and events.
 
 ---
