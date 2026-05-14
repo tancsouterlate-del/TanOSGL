@@ -3,11 +3,8 @@ from discord.ext import commands
 from discord import app_commands
 from datetime import datetime
 from aiohttp import web
-import asyncio
 import config
-import os
 
-# Colors per application type
 APP_COLORS = {
     "staff":      0x5865F2,
     "moderator":  0xFF8C00,
@@ -17,12 +14,11 @@ APP_COLORS = {
 
 
 def build_application_embed(data: dict) -> discord.Embed:
-    """Build a styled application embed from Roblox webhook data."""
-    app_type    = data.get("type", "Application").title()
-    username    = data.get("username", "Unknown")
-    user_id     = data.get("userId", "")
-    answers     = data.get("answers", {})
-    submitted   = data.get("timestamp", datetime.utcnow().strftime("%m/%d/%Y %I:%M %p UTC"))
+    app_type  = data.get("type", "Application").title()
+    username  = data.get("username", "Unknown")
+    user_id   = data.get("userId", "")
+    answers   = data.get("answers", {})
+    submitted = data.get("timestamp", datetime.utcnow().strftime("%m/%d/%Y %I:%M %p UTC"))
 
     color = APP_COLORS.get(data.get("type", "").lower(), APP_COLORS["default"])
 
@@ -43,7 +39,6 @@ def build_application_embed(data: dict) -> discord.Embed:
     embed.add_field(name="Username", value=username, inline=True)
     embed.add_field(name="Submitted", value=submitted, inline=True)
 
-    # Add Q&A fields
     for question, answer in answers.items():
         embed.add_field(name=question, value=answer or "No answer", inline=False)
 
@@ -54,30 +49,14 @@ def build_application_embed(data: dict) -> discord.Embed:
 class Applications(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.runner = None
-        self.site = None
-        bot.loop.create_task(self.start_webhook_server())
-
-    async def start_webhook_server(self):
-        """Start an aiohttp server to receive Roblox webhooks."""
-        await self.bot.wait_until_ready()
-        app = web.Application()
-        app.router.add_post("/application", self.handle_application)
-        app.router.add_get("/health", self.health_check)
-
-        self.runner = web.AppRunner(app)
-        await self.runner.setup()
-        port = int(os.environ.get("PORT", config.get("application_webhook_port") or 5000))
-        self.site = web.TCPSite(self.runner, "0.0.0.0", port)
-        await self.site.start()
-        print(f"[Applications] Webhook server listening on port {port}")
+        # Register routes on the shared web app
+        bot.web_app.router.add_post("/application", self.handle_application)
+        bot.web_app.router.add_get("/health", self.health_check)
 
     async def health_check(self, request: web.Request) -> web.Response:
         return web.Response(text="OK")
 
     async def handle_application(self, request: web.Request) -> web.Response:
-        """Handle incoming application from Roblox game."""
-        # Verify secret if configured
         secret = config.get("application_webhook_secret")
         if secret:
             auth = request.headers.get("Authorization", "")
@@ -104,10 +83,6 @@ class Applications(commands.Cog):
 
         print(f"[Applications] New application from {data.get('username', 'Unknown')}")
         return web.Response(status=200, text="OK")
-
-    def cog_unload(self):
-        if self.runner:
-            asyncio.create_task(self.runner.cleanup())
 
 
 async def setup(bot: commands.Bot):
