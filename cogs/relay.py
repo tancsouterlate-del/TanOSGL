@@ -67,9 +67,15 @@ class Relay(commands.Cog):
             # Rebuild embed from dict
             embed = discord.Embed.from_dict(embed_data)
 
-            content = "@here" if ping else ""
+            # Ping @everyone for Rank proposals, @here for all others
+            proposal_type = embed_data.get("author", {}).get("name", "")
+            if ping:
+                content = "@everyone" if proposal_type == "Rank" else "@here"
+            else:
+                content = ""
+
             await channel.send(content=content, embed=embed)
-            print(f"[Relay] Announcement posted to {channel.name}")
+            print(f"[Relay] Announcement posted to {channel.name} (type={proposal_type}, ping={content or 'none'})")
             return web.Response(status=200, text="OK")
         except Exception as e:
             print(f"[Relay] Error posting announcement: {e}")
