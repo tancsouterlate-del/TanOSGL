@@ -5,12 +5,12 @@ import config
 
 
 def is_admin(interaction: discord.Interaction) -> bool:
-    allowed = ["The Administrator", "Class-X Overwatch"]
+    allowed = ["The Administrator", "Class - X"]
     return any(r.name in allowed for r in interaction.user.roles)
 
 
 def is_staff(interaction: discord.Interaction) -> bool:
-    allowed = ["The Administrator", "Class-X Overwatch", "Class O", "Class A"]
+    allowed = ["The Administrator", "Class - X", "Class - O", "Class - A"]
     return any(r.name in allowed for r in interaction.user.roles)
 
 
@@ -38,7 +38,7 @@ class Admin(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            await interaction.followup.send("❌ Class - X or The Administrator role required.", ephemeral=True)
             return
 
         if applications_channel:
@@ -73,7 +73,7 @@ class Admin(commands.Cog):
     async def set_webhook_secret(self, interaction: discord.Interaction, secret: str):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            await interaction.followup.send("❌ Class - X or The Administrator role required.", ephemeral=True)
             return
         config.set_value("application_webhook_secret", secret)
         await interaction.followup.send("✅ Webhook secret saved!", ephemeral=True)
@@ -84,7 +84,7 @@ class Admin(commands.Cog):
     async def set_announcement_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            await interaction.followup.send("❌ Class - X or The Administrator role required.", ephemeral=True)
             return
         config.set_value("announcement_channel_id", channel.id)
         await interaction.followup.send(f"✅ Announcement channel set to {channel.mention}!", ephemeral=True)
@@ -95,7 +95,7 @@ class Admin(commands.Cog):
     async def set_relay_secret(self, interaction: discord.Interaction, secret: str):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            await interaction.followup.send("❌ Class - X or The Administrator role required.", ephemeral=True)
             return
         config.set_value("relay_secret", secret)
         await interaction.followup.send("✅ Relay secret saved!", ephemeral=True)
@@ -105,7 +105,7 @@ class Admin(commands.Cog):
     async def status(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            await interaction.followup.send("❌ Class - X or The Administrator role required.", ephemeral=True)
             return
 
         cfg = config.load()
@@ -129,7 +129,7 @@ class Admin(commands.Cog):
     async def restart(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not is_admin(interaction):
-            await interaction.followup.send("❌ Class-X Overwatch or The Administrator role required.", ephemeral=True)
+            await interaction.followup.send("❌ Class - X or The Administrator role required.", ephemeral=True)
             return
         await interaction.followup.send("♻️ Restarting GlacierBot...", ephemeral=True)
         import os, sys
