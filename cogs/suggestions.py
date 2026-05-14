@@ -6,8 +6,8 @@ SUGGESTIONS_CHANNEL_ID = 1084917356419096647
 FORWARD_CHANNEL_ID = 1089548190577086577
 FEATURED_CHANNEL_ID = 1370158487312662529
 
-UPVOTE_EMOJI = "✅"
-DOWNVOTE_EMOJI = "❌"
+UPVOTE_EMOJI = "<:reaction_approved:1280928878369439807>"
+DOWNVOTE_EMOJI = "<:reaction_denied:1280946099284213822>"
 NC_EMOJI = "<:nc:1268768073523925013>"
 UPVOTE_THRESHOLD = 1
 
@@ -87,12 +87,14 @@ class FeedbackModal(discord.ui.Modal, title="Developer Feedback"):
 
 
 class ApproveView(discord.ui.View):
-    def __init__(self, suggestion_embed: discord.Embed, feedback: str, dev: discord.Member, original_message_id: int):
+    def __init__(self, suggestion_embed: discord.Embed, feedback: str, dev: discord.Member, original_message_id: int, forwarded_message_id: int, forward_channel_id: int):
         super().__init__(timeout=120)
         self.suggestion_embed = suggestion_embed
         self.feedback = feedback
         self.dev = dev
         self.original_message_id = original_message_id
+        self.forwarded_message_id = forwarded_message_id
+        self.forward_channel_id = forward_channel_id
 
     @discord.ui.button(label="✅ Approve", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -103,36 +105,44 @@ class ApproveView(discord.ui.View):
         await self._submit(interaction, approved=False)
 
     async def _submit(self, interaction: discord.Interaction, approved: bool):
+        await interaction.response.defer(ephemeral=True)
         result_embed = build_result_embed(self.suggestion_embed, self.feedback, approved, self.dev)
 
-        # Edit the forwarded message
-        await interaction.message.edit(embed=result_embed, view=None)
+        # Edit the forwarded message in dev server
+        try:
+            forward_channel = interaction.client.get_channel(self.forward_channel_id)
+            if forward_channel:
+                forwarded_msg = await forward_channel.fetch_message(self.forwarded_message_id)
+                await forwarded_msg.edit(embed=result_embed, view=None)
+        except Exception as e:
+            print(f"[Suggestions] Could not edit forwarded message: {e}")
 
         # Post to featured channel in main server
         featured_channel = interaction.client.get_channel(FEATURED_CHANNEL_ID)
         if featured_channel:
             await featured_channel.send(embed=result_embed)
 
-        # React to original suggestion with checkmark or X
+        # React to original suggestion
         try:
             suggestions_channel = interaction.client.get_channel(SUGGESTIONS_CHANNEL_ID)
             if suggestions_channel:
                 original = await suggestions_channel.fetch_message(self.original_message_id)
-                await original.add_reaction("✅" if approved else "❌")
+                await original.add_reaction("<:reaction_approved:1280928878369439807>" if approved else "<:reaction_denied:1280946099284213822>")
         except Exception as e:
             print(f"[Suggestions] Could not react to original: {e}")
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"{'✅ Approved' if approved else '❌ Denied'} and posted to featured channel!",
             ephemeral=True
         )
 
 
 class DevFeedbackView(discord.ui.View):
-    def __init__(self, suggestion_embed: discord.Embed, original_message_id: int):
+    def __init__(self, suggestion_embed: discord.Embed, original_message_id: int, forwarded_message_id: int):
         super().__init__(timeout=None)
         self.suggestion_embed = suggestion_embed
         self.original_message_id = original_message_id
+        self.forwarded_message_id = forwarded_message_id
 
     @discord.ui.button(label="Developer Feedback", style=discord.ButtonStyle.primary, custom_id="dev_feedback")
     async def dev_feedback(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -141,7 +151,7 @@ class DevFeedbackView(discord.ui.View):
         await modal.wait()
 
         feedback_text = modal.feedback.value
-        approve_view = ApproveView(self.suggestion_embed, feedback_text, interaction.user, self.original_message_id)
+        approve_view = ApproveView(self.suggestion_embed, feedback_text, interaction.user, self.original_message_id, self.forwarded_message_id, FORWARD_CHANNEL_ID)
         await interaction.followup.send(
             "Feedback recorded! Now choose a result:",
             view=approve_view,
@@ -208,8 +218,9 @@ class Suggestions(commands.Cog):
                 return
 
             embed = build_suggestion_embed(message)
-            view = DevFeedbackView(embed, message.id)
-            await forward_channel.send(embed=embed, view=view)
+            forwarded_msg = await forward_channel.send(embed=embed, view=discord.ui.View())
+            view = DevFeedbackView(embed, message.id, forwarded_msg.id)
+            await forwarded_msg.edit(view=view)
             print(f"[Suggestions] Forwarded suggestion {message.id} to dev server.")
 
 
