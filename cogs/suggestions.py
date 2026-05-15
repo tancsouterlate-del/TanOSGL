@@ -14,6 +14,28 @@ UPVOTE_THRESHOLD = 7
 # In-memory lock to prevent race conditions
 _forwarding_in_progress = set()
 
+# Persistent set of already-forwarded message IDs
+import json, os
+_FORWARDED_FILE = "forwarded_suggestions.json"
+
+def _load_forwarded() -> set:
+    if not os.path.exists(_FORWARDED_FILE):
+        return set()
+    with open(_FORWARDED_FILE) as f:
+        return set(json.load(f))
+
+def _save_forwarded(ids: set):
+    with open(_FORWARDED_FILE, "w") as f:
+        json.dump(list(ids), f)
+
+def _is_forwarded(message_id: int) -> bool:
+    return message_id in _load_forwarded()
+
+def _mark_forwarded(message_id: int):
+    ids = _load_forwarded()
+    ids.add(message_id)
+    _save_forwarded(ids)
+
 
 def build_suggestion_embed(message: discord.Message) -> discord.Embed:
     guild = message.guild
@@ -175,19 +197,26 @@ class Suggestions(commands.Cog):
             except discord.NotFound:
                 return
 
+            # Check persistent file first — most reliable method
+            if _is_forwarded(message.id):
+                return
+
             upvote_count = 0
-            already_forwarded = False
             for reaction in message.reactions:
                 if str(reaction.emoji) == UPVOTE_EMOJI:
                     upvote_count = reaction.count - 1
-                if str(reaction.emoji) == NC_EMOJI:
-                    already_forwarded = True
 
-            if upvote_count < UPVOTE_THRESHOLD or already_forwarded:
+            if upvote_count < UPVOTE_THRESHOLD:
                 return
 
-            # Mark as forwarded with NC emoji
-            await message.add_reaction(NC_EMOJI)
+            # Mark as forwarded in file immediately
+            _mark_forwarded(message.id)
+
+            # Also add NC emoji as visual indicator
+            try:
+                await message.add_reaction(NC_EMOJI)
+            except Exception:
+                pass
 
             forward_channel = self.bot.get_channel(FORWARD_CHANNEL_ID)
             if not forward_channel:
