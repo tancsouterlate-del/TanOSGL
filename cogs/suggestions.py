@@ -9,7 +9,7 @@ FEATURED_CHANNEL_ID = 1370158487312662529
 UPVOTE_EMOJI = "<:reaction_approved:1280928878369439807>"
 DOWNVOTE_EMOJI = "<:reaction_denied:1280946099284213822>"
 NC_EMOJI = "<:nc:1268768073523925013>"
-UPVOTE_THRESHOLD = 15
+UPVOTE_THRESHOLD = 7
 
 
 def build_suggestion_embed(message: discord.Message) -> discord.Embed:
